@@ -45,11 +45,15 @@ check_D_10() {
 check_D_11() {
     docker_print_check "D-11"
     local insecure
-    insecure=$(docker info 2>/dev/null | grep -i "insecure registr" | head -1)
+    # docker info는 'Insecure Registries:' 헤더를 항상 출력하고 기본값으로
+    # 루프백(127.0.0.0/8, ::1/128)을 포함하므로, 실제 추가 설정된 항목만 추출한다.
+    insecure=$(docker info 2>/dev/null \
+        | awk '/^ Insecure Registries:$/{f=1; next} f && /^  /{print $1; next} f{exit}' \
+        | grep -Ev '^(127\.0\.0\.0/8|::1/128)$')
     if [ -z "$insecure" ]; then
-        docker_record_result "D-11" "PASS" "insecure-registries 설정 없음"
+        docker_record_result "D-11" "PASS" "insecure-registries 설정 없음 (기본 루프백 제외)"
     else
-        docker_record_result "D-11" "FAIL" "신뢰할 수 없는 레지스트리 설정 존재: ${insecure}"
+        docker_record_result "D-11" "FAIL" "신뢰할 수 없는 레지스트리 설정 존재: $(echo "$insecure" | tr '\n' ' ')"
     fi
 }
 
