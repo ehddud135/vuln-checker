@@ -17,6 +17,8 @@
 - [출력 파일](#출력-파일)
 - [점검 항목](#점검-항목)
 - [Docker 점검 (CIS Docker Benchmark)](#docker-점검-cis-docker-benchmark)
+- [CIS Linux Benchmark 점검](#cis-linux-benchmark-점검)
+- [ISMS-P 인증기준 점검 (매핑 기반)](#isms-p-인증기준-점검-매핑-기반)
 - [지원 환경](#지원-환경)
 - [결과 판정 기준](#결과-판정-기준)
 
@@ -101,6 +103,13 @@ vuln-checker/
 │           ├── section4.sh          # 로깅 및 감사 (CL-27 ~ CL-31)
 │           ├── section5.sh          # 접근 및 인증 (CL-32 ~ CL-38)
 │           └── section6.sh          # 시스템 유지보수 (CL-39 ~ CL-44)
+├── isms-p/
+│   ├── main.sh                      # ISMS-P 점검 진입점 (--profile isms-p/all)
+│   └── scripts/
+│       ├── common.sh                # KISA 결과 파싱·판정 파생·JSON 생성
+│       ├── security_codes.sh        # IS-01 ~ IS-17 코드·인증기준 매핑
+│       ├── security_details.sh      # 각 항목별 점검 목적·기준·조치 상세
+│       └── mapping.sh               # ISMS-P 인증기준 → U-XX 매핑 테이블
 ├── windows/
 │   ├── main.ps1                     # Windows 진입점 (PowerShell)
 │   └── scripts/
@@ -167,14 +176,15 @@ root 권한이 없으면 아래 메시지와 함께 즉시 종료됩니다.
 | `kisa` | 주요정보통신기반시설 점검만 (U-01~U-72) | ✅ |
 | `docker` | Docker CIS Benchmark 점검만 (D-01~D-68) | ✅ |
 | `cis-linux` | CIS Linux Benchmark 점검 (CL-01~CL-44) | ✅ |
-| `all` | 구현된 모든 기준 실행 (주기반 + Docker + CIS Linux) | ✅ |
-| `isms-p` | ISMS-P 기술적 보호조치 | 🚧 준비 중 |
+| `isms-p` | ISMS-P 인증기준 (IS-01~IS-17, 주기반 결과 매핑 기반) | ✅ |
+| `all` | 구현된 모든 기준 실행 (주기반 + Docker + CIS Linux + ISMS-P) | ✅ |
 
 ```bash
 sudo ./main.sh                      # 기본 (주기반 + Docker 자동감지)
 sudo ./main.sh --profile kisa       # 주기반 점검만
 sudo ./main.sh --profile docker     # Docker 점검만
 sudo ./main.sh --profile cis-linux  # CIS Linux Benchmark 점검만
+sudo ./main.sh --profile isms-p     # ISMS-P 인증기준 (주기반 점검 후 매핑 판정)
 sudo ./main.sh --profile all        # 모든 기준 실행
 sudo ./main.sh --parallel -j 8      # 8개씩 병렬 실행
 ```
@@ -224,6 +234,7 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -base64 -A \
 | `summary_*.md` | 주기반 요약 보고서 (Markdown) |
 | `docker_result_*.txt` / `.json` | Docker 점검 결과 (감지 시) |
 | `cis_linux_result_*.txt` / `.json` | CIS Linux 점검 결과 (`--profile cis-linux`/`all`) |
+| `isms_p_result_*.txt` / `.json` | ISMS-P 인증기준 판정 결과 (`--profile isms-p`/`all`) |
 | `result_all_*.json` | **통합 JSON** — 모든 기준을 한 파일에 (각 항목에 `standard` 필드). 뷰어에서 기준별 필터로 표시 |
 | `*.json.enc` | `--encrypt` 사용 시 위 JSON들을 AES-256으로 암호화한 파일 (평문 `.json`은 제거됨) |
 
@@ -437,6 +448,56 @@ CIS Linux 점검 결과도 **별도 파일**로 저장됩니다.
 
 - **CIS Benchmarks for Linux** (Center for Internet Security)
 - 공식 문서: https://www.cisecurity.org/cis-benchmarks
+
+---
+
+## ISMS-P 인증기준 점검 (매핑 기반)
+
+`--profile isms-p` (또는 `--profile all`) 실행 시 **ISMS-P 인증기준(보호대책 요구사항)** 관점의 판정이 생성됩니다.
+
+다른 기준과 달리 점검 스크립트를 새로 실행하지 않고, **주기반(U-01~U-72) 점검 결과를 인증기준별로 매핑·집계**해 판정을 파생합니다. 따라서 `--profile isms-p`를 지정하면 소스가 되는 주기반 점검이 먼저 자동 실행됩니다.
+
+### 판정 방식
+
+| 매핑된 U-XX 결과 | ISMS-P 판정 |
+|------------------|-------------|
+| 하나라도 취약 | ❌ 취약 |
+| 취약은 없고 확인필요 존재 | ⚠️ 확인필요 |
+| 모두 양호 | ✅ 양호 |
+| 매핑 없음 (정책·절차 항목) | ⚠️ 확인필요 + 수동 점검 안내 |
+
+각 항목의 `상세` 필드에 매핑된 U-XX 코드와 개별 판정이 표시되어, 어떤 주기반 항목을 조치하면 해당 인증기준이 충족되는지 바로 추적할 수 있습니다.
+
+### ISMS-P 점검 항목 (IS-01 ~ IS-17)
+
+서버(OS) 수준에서 의미 있는 **2.x 보호대책 요구사항 17개 세부항목**을 다룹니다.
+
+| 코드 | 인증기준 | 매핑 |
+|------|----------|------|
+| IS-01 | 2.5.1 사용자 계정 관리 | U-05, U-07, U-09, U-10, U-30, U-71 |
+| IS-02 | 2.5.2 사용자 식별 | U-05, U-10 |
+| IS-03 | 2.5.3 사용자 인증 | U-01, U-03, U-70 |
+| IS-04 | 2.5.4 비밀번호 관리 | U-02, U-04, U-13 |
+| IS-05 | 2.5.5 특수 계정 및 권한 관리 | U-06, U-08 |
+| IS-06 | 2.5.6 접근권한 검토 | U-28 |
+| IS-07 | 2.6.1 네트워크 접근 | 수동 점검 |
+| IS-08 | 2.6.2 정보시스템 접근 | U-11, U-12, U-29, U-34, U-36, U-38, U-39, U-41~U-44, U-52, U-54 |
+| IS-09 | 2.6.6 원격접근 통제 | U-01, U-27, U-70 |
+| IS-10 | 2.7.1 암호정책 적용 | U-13, U-52, U-54, U-59 |
+| IS-11 | 2.7.2 암호키 관리 | 수동 점검 |
+| IS-12 | 2.9.3 백업 및 복구관리 | 수동 점검 |
+| IS-13 | 2.9.4 로그 및 접속기록 관리 | U-21, U-66, U-67 |
+| IS-14 | 2.9.5 로그 및 접속기록 점검 | 수동 점검 |
+| IS-15 | 2.10.3 공개서버 보안 | U-35, U-46~U-48, U-50, U-51, U-53, U-55~U-57 |
+| IS-16 | 2.10.8 패치관리 | U-45, U-49, U-64, U-72 |
+| IS-17 | 2.10.9 악성코드 통제 | 수동 점검 |
+
+> ⚠️ **범위 안내**: 이 점검은 ISMS-P 인증기준 중 서버 기술 항목의 이행 여부를 확인하는 보조 도구입니다. 관리체계(1.x), 개인정보 처리단계(3.x), 조직·문서 기반 항목은 다루지 않으며, 인증 심사 대비를 대체하지 않습니다.
+
+### 참고 표준
+
+- **ISMS-P 인증기준** (한국인터넷진흥원 / 개인정보보호위원회)
+- 인증제도 안내: https://isms.kisa.or.kr
 
 ---
 

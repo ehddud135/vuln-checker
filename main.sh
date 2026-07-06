@@ -39,7 +39,7 @@ show_help() {
     echo "  docker      Docker CIS Benchmark 점검만 (D-01~D-68)"
     echo "  all         구현된 모든 기준 실행"
     echo "  cis-linux   CIS Linux Benchmark (CL-01~CL-44)"
-    echo "  isms-p      ISMS-P 기술적 보호조치 (준비 중)"
+    echo "  isms-p      ISMS-P 인증기준 (IS-01~IS-17, 주기반 결과 매핑 기반)"
     echo ""
     echo "예시:"
     echo "  sudo $0                       # 기본 (주기반 + Docker 자동감지)"
@@ -57,7 +57,7 @@ list_profiles() {
     echo "  docker      Docker CIS Benchmark 점검만 (D-01~D-68)"
     echo "  all         구현된 모든 기준 실행"
     echo "  cis-linux   CIS Linux Benchmark (CL-01~CL-44)"
-    echo "  isms-p      ISMS-P 기술적 보호조치 (준비 중)"
+    echo "  isms-p      ISMS-P 인증기준 (IS-01~IS-17, 주기반 결과 매핑 기반)"
     exit 0
 }
 
@@ -243,22 +243,24 @@ log() {
 # 함수: 초기화
 ################################################################################
 init() {
-    # 결과 파일 초기화
-    {
-        echo "===================================================="
-        echo "Vulnerability Checker 결과"
-        echo "===================================================="
-        echo "실행일시: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "OS: ${OS_TYPE}"
-        echo "===================================================="
-    } > "$RESULT_FILE"
-    
+    # 결과 파일 초기화 (주기반 점검이 포함된 프로파일에서만 생성)
+    if profile_includes_kisa; then
+        {
+            echo "===================================================="
+            echo "Vulnerability Checker 결과"
+            echo "===================================================="
+            echo "실행일시: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "OS: ${OS_TYPE}"
+            echo "===================================================="
+        } > "$RESULT_FILE"
+    fi
+
     log "INFO" "=================================="
     log "INFO" "Vulnerability Checker 시작"
     log "INFO" "=================================="
     log "INFO" "OS: ${OS_TYPE}"
     log "INFO" "스크립트 디렉토리: ${SCRIPT_DIR}"
-    log "INFO" "결과 저장: ${RESULT_FILE}"
+    log "INFO" "결과 저장 디렉토리: ${RESULTS_DIR}"
     if [ "$PARALLEL_MODE" = "true" ]; then
         log "INFO" "실행 모드: 병렬 (동시 ${PARALLEL_JOBS}개)"
     else
@@ -370,11 +372,12 @@ build_combined_json() {
     tmp=$(mktemp /tmp/vuln_combined_XXXXXX 2>/dev/null || echo "/tmp/vuln_combined_$$")
     > "$tmp"
 
-    local pair label path
+    local pair label path label_list=""
     for pair in "$@"; do
         label="${pair%%|*}"
         path="${pair#*|}"
         [ -f "$path" ] || continue
+        label_list="${label_list:+${label_list} + }${label}"
         # checks 배열의 각 항목 라인 추출 → 끝 콤마 제거 → standard 필드 주입
         awk 'BEGIN{f=0} /"checks": \[/{f=1; next} f && /^[[:space:]]*\]/{f=0} f{print}' "$path" \
             | sed 's/,[[:space:]]*$//' \
@@ -402,7 +405,7 @@ build_combined_json() {
     "executionTime": "${run_date}",
     "hostname": "${esc_hostname}",
     "os": "통합",
-    "distro": "KISA + Docker + CIS Linux",
+    "distro": "${label_list}",
     "architecture": "${arch}"
   },
   "summary": {
@@ -425,9 +428,18 @@ JSONEOF
 # 함수: 프로파일 판정
 ################################################################################
 # 현재 프로파일에 KISA(주기반 U-01~U-72) 점검이 포함되는지
+# isms-p는 주기반 결과를 소스로 판정을 파생하므로 주기반 점검을 함께 실행한다
 profile_includes_kisa() {
     case "$PROFILE" in
-        default|kisa|all) return 0 ;;
+        default|kisa|all|isms-p) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# 현재 프로파일에 ISMS-P(매핑 기반) 점검이 포함되는지
+profile_includes_isms_p() {
+    case "$PROFILE" in
+        isms-p|all) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -446,16 +458,6 @@ profile_includes_cis_linux() {
         cis-linux|all) return 0 ;;
         *) return 1 ;;
     esac
-}
-
-# 아직 구현되지 않은 프로파일 안내
-show_not_implemented_profile() {
-    local name="$1"
-    local desc="$2"
-    echo -e "${YELLOW}[준비 중] '${name}' 프로파일은 아직 구현되지 않았습니다.${NC}"
-    echo -e "${YELLOW}  ${desc}${NC}"
-    echo -e "${YELLOW}  현재 사용 가능한 프로파일: default, kisa, docker, all${NC}"
-    log "INFO" "미구현 프로파일 요청: ${name}"
 }
 
 ################################################################################
@@ -485,13 +487,9 @@ main() {
     local result=0
     log "INFO" "실행 프로파일: ${PROFILE}"
 
-    # 미구현 프로파일 처리 (안내 후 종료)
-    case "$PROFILE" in
-        isms-p)
-            show_not_implemented_profile "isms-p" "ISMS-P 기술적 보호조치 점검 기준"
-            return 0
-            ;;
-    esac
+    if [ "$PROFILE" = "isms-p" ]; then
+        echo -e "${BLUE}[ISMS-P] ISMS-P 판정의 소스로 주기반(U-01~U-72) 점검을 먼저 실행합니다.${NC}"
+    fi
 
     # OS별 스크립트 실행 (KISA 주기반 점검 — U-01~U-72)
     if profile_includes_kisa; then
@@ -575,24 +573,14 @@ main() {
     # 결과 집계
     # grep -c는 일치가 없어도 "0"을 출력하므로 `|| echo 0`을 붙이면 "0\n0"이 되어
     # 산술식이 깨진다. 출력을 그대로 받고 비어있을 때만 0으로 보정한다.
-    local pass_count fail_count review_count
-    pass_count=$(grep -c "점검 결과: 양호"    "$RESULT_FILE" 2>/dev/null); pass_count=${pass_count:-0}
-    fail_count=$(grep -c "점검 결과: 취약"    "$RESULT_FILE" 2>/dev/null); fail_count=${fail_count:-0}
-    review_count=$(grep -c "점검 결과: 확인필요" "$RESULT_FILE" 2>/dev/null); review_count=${review_count:-0}
+    local pass_count=0 fail_count=0 review_count=0
+    if [ -f "$RESULT_FILE" ]; then
+        pass_count=$(grep -c "점검 결과: 양호"    "$RESULT_FILE" 2>/dev/null); pass_count=${pass_count:-0}
+        fail_count=$(grep -c "점검 결과: 취약"    "$RESULT_FILE" 2>/dev/null); fail_count=${fail_count:-0}
+        review_count=$(grep -c "점검 결과: 확인필요" "$RESULT_FILE" 2>/dev/null); review_count=${review_count:-0}
+    fi
     local total_count=$(( pass_count + fail_count + review_count ))
 
-    # 결과 파일 마무리
-    {
-        echo ""
-        echo "===================================================="
-        echo "검사 완료: 총 ${total_count}개  양호 ${pass_count}  취약 ${fail_count}  확인필요 ${review_count}"
-        echo "===================================================="
-    } >> "$RESULT_FILE"
-
-    # 마크다운 요약 파일 생성
-    generate_summary "$pass_count" "$fail_count" "$review_count" "$total_count"
-
-    # JSON 결과 파일 생성
     local run_date
     run_date=$(date '+%Y-%m-%dT%H:%M:%S')
     local json_hostname
@@ -601,17 +589,50 @@ main() {
     local json_arch
     json_arch=$(uname -m 2>/dev/null || echo "unknown")
 
-    generate_json "$JSON_FILE" "$run_date" "$json_hostname" "$OS_TYPE" "$json_distro" "$json_arch" \
-        "$pass_count" "$fail_count" "$review_count" "$total_count"
+    # 주기반 결과 파일 마무리·요약·JSON 생성 (주기반 점검이 실행된 경우에만)
+    if profile_includes_kisa && [ -f "$RESULT_FILE" ]; then
+        {
+            echo ""
+            echo "===================================================="
+            echo "검사 완료: 총 ${total_count}개  양호 ${pass_count}  취약 ${fail_count}  확인필요 ${review_count}"
+            echo "===================================================="
+        } >> "$RESULT_FILE"
 
-    log "INFO" "JSON 저장: ${JSON_FILE}"
-    log "INFO" "요약 저장: ${SUMMARY_FILE}"
+        # 마크다운 요약 파일 생성
+        generate_summary "$pass_count" "$fail_count" "$review_count" "$total_count"
+
+        # JSON 결과 파일 생성
+        generate_json "$JSON_FILE" "$run_date" "$json_hostname" "$OS_TYPE" "$json_distro" "$json_arch" \
+            "$pass_count" "$fail_count" "$review_count" "$total_count"
+
+        log "INFO" "JSON 저장: ${JSON_FILE}"
+        log "INFO" "요약 저장: ${SUMMARY_FILE}"
+    fi
+
+    # ISMS-P 점검 (주기반 결과 JSON을 소스로 매핑 기반 판정 파생)
+    if profile_includes_isms_p; then
+        if [ "$total_count" -gt 0 ] && [ -f "$JSON_FILE" ]; then
+            log "INFO" "ISMS-P 매핑 점검 실행 중..."
+            echo -e "${BLUE}[ISMS-P] 주기반 결과를 기반으로 ISMS-P 인증기준 판정을 생성합니다...${NC}"
+            if [ -f "${SCRIPT_DIR}/isms-p/main.sh" ]; then
+                export RESULTS_DIR
+                source "${SCRIPT_DIR}/isms-p/main.sh"
+                run_isms_p_checks "$JSON_FILE"
+            else
+                log "ERROR" "isms-p/main.sh를 찾을 수 없습니다"
+            fi
+        else
+            log "WARNING" "주기반 점검 결과가 없어 ISMS-P 판정을 생성할 수 없습니다"
+            echo -e "${YELLOW}[ISMS-P] 주기반(U-XX) 결과가 없어 ISMS-P 점검을 건너뜁니다.${NC}"
+        fi
+    fi
 
     # 통합 JSON 생성 (2개 이상 기준이 점검된 경우 result_all_*.json 추가 생성)
     local combined_pairs=()
     [ "$total_count" -gt 0 ] && combined_pairs+=("주기반|${JSON_FILE}")
     [ -n "${DOCKER_JSON_OUTPUT:-}" ] && [ -f "${DOCKER_JSON_OUTPUT:-/nonexistent}" ] && combined_pairs+=("Docker|${DOCKER_JSON_OUTPUT}")
     [ -n "${CIS_JSON_OUTPUT:-}" ] && [ -f "${CIS_JSON_OUTPUT:-/nonexistent}" ] && combined_pairs+=("CIS Linux|${CIS_JSON_OUTPUT}")
+    [ -n "${ISMSP_JSON_OUTPUT:-}" ] && [ -f "${ISMSP_JSON_OUTPUT:-/nonexistent}" ] && combined_pairs+=("ISMS-P|${ISMSP_JSON_OUTPUT}")
     if [ "${#combined_pairs[@]}" -ge 2 ]; then
         local combined_file="${RESULTS_DIR}/result_all_${TIMESTAMP}.json"
         if build_combined_json "$combined_file" "$run_date" "$json_hostname" "$json_arch" "${combined_pairs[@]}"; then
@@ -630,6 +651,7 @@ main() {
             [ "$total_count" -gt 0 ] && enc_targets+=("$JSON_FILE")
             [ -n "${DOCKER_JSON_OUTPUT:-}" ] && [ -f "${DOCKER_JSON_OUTPUT:-/nonexistent}" ] && enc_targets+=("$DOCKER_JSON_OUTPUT")
             [ -n "${CIS_JSON_OUTPUT:-}" ] && [ -f "${CIS_JSON_OUTPUT:-/nonexistent}" ] && enc_targets+=("$CIS_JSON_OUTPUT")
+            [ -n "${ISMSP_JSON_OUTPUT:-}" ] && [ -f "${ISMSP_JSON_OUTPUT:-/nonexistent}" ] && enc_targets+=("$ISMSP_JSON_OUTPUT")
             [ -n "${combined_file:-}" ] && [ -f "${combined_file:-/nonexistent}" ] && enc_targets+=("$combined_file")
             local f
             for f in "${enc_targets[@]}"; do
@@ -649,9 +671,14 @@ main() {
         fi
     fi
 
-    # 종료 처리
+    # 종료 처리 (실행된 모든 기준의 결과를 합산해 표시)
+    local overall_pass=$(( pass_count + ${DOCKER_PASS_COUNT:-0} + ${CIS_PASS_COUNT:-0} + ${ISMSP_PASS_COUNT:-0} ))
+    local overall_fail=$(( fail_count + ${DOCKER_FAIL_COUNT:-0} + ${CIS_FAIL_COUNT:-0} + ${ISMSP_FAIL_COUNT:-0} ))
+    local overall_review=$(( review_count + ${DOCKER_REVIEW_COUNT:-0} + ${CIS_REVIEW_COUNT:-0} + ${ISMSP_REVIEW_COUNT:-0} ))
+    local overall_total=$(( overall_pass + overall_fail + overall_review ))
+
     if [ $result -eq 0 ]; then
-        finalize 0 "모든 검사 완료 (총 ${total_count}개 | 양호 ${pass_count} / 취약 ${fail_count} / 확인필요 ${review_count}) | JSON: ${JSON_FILE}"
+        finalize 0 "모든 검사 완료 (총 ${overall_total}개 | 양호 ${overall_pass} / 취약 ${overall_fail} / 확인필요 ${overall_review}) | 결과: ${RESULTS_DIR}/"
     else
         finalize 1 "검사 중 오류 발생"
     fi
