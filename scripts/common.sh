@@ -335,19 +335,19 @@ is_nologin_shell() {
 # 계정 잠금 여부 확인 (shadow 파일)
 is_account_locked() {
     local username="$1"
-    if [ ! -f /etc/shadow ]; then
+    if [ ! -r /etc/shadow ]; then
         echo "unknown"
         return
     fi
-    
+
     local passwd_field=$(awk -F: -v user="$username" '$1 == user {print $2}' /etc/shadow)
-    if [[ "$passwd_field" == "!" ]] || [[ "$passwd_field" == "*" ]]; then
-        echo "locked"
-    elif [[ "$passwd_field" == "*LK*" ]] || [[ "$passwd_field" == "!!"* ]]; then
-        echo "locked"
-    else
-        echo "unlocked"
-    fi
+    # passwd -l은 해시 앞에 '!'를 붙이므로(!$6$...) 잠금 판정은 첫 글자 기준이어야 한다.
+    # '!', '!!', '*', '*LK*' 등 배포판별 잠금 표기를 모두 포괄한다.
+    case "$passwd_field" in
+        "")      echo "unknown" ;;
+        \!*|\**) echo "locked" ;;
+        *)       echo "unlocked" ;;
+    esac
 }
 
 # sudo 권한 있는 계정 확인

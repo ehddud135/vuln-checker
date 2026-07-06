@@ -42,18 +42,36 @@ check_U_66() {
         fi
     done
 
+    # journald 영구 저장(/var/log/journal)도 유효한 로그 보관으로 인정
+    # (rsyslog 없이 journald만 쓰는 배포판에서 클래식 로그 파일이 없을 수 있음)
+    local journal_volatile_only=false
+    if ! $log_found && [ -d /var/log/journal ]; then
+        append_log "  journald 영구 저장 사용 중: /var/log/journal"
+        log_found=true
+    elif ! $log_found && [ -d /run/log/journal ]; then
+        append_log "  ⚠️  journald가 휘발성 저장(/run/log/journal)만 사용 — 재부팅 시 로그 소실"
+        journal_volatile_only=true
+    fi
+
+    local issues=""
     if ! $log_found; then
         append_log "  ⚠️  주요 로그 파일이 없음"
+        if $journal_volatile_only; then
+            issues="journald가 휘발성 저장만 사용(재부팅 시 소실) — /etc/systemd/journald.conf에 Storage=persistent 설정 필요"
+        else
+            issues="주요 로그 파일 없음"
+        fi
         fail=true
     fi
 
     if ! $logging_active; then
         append_log "  ⚠️  로깅 서비스가 활성화되지 않음"
+        issues="${issues:+${issues} / }로깅 서비스(rsyslog/journald) 비활성"
         fail=true
     fi
 
     if $fail; then
-        record_check_result "U-66" "FAIL" "시스템 로깅 설정 미흡"
+        record_check_result "U-66" "FAIL" "시스템 로깅 설정 미흡: ${issues}"
     else
         record_check_result "U-66" "PASS" "시스템 로깅 설정 양호"
     fi
