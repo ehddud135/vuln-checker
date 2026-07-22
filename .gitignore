@@ -52,3 +52,6 @@ results/
 
 # Claude Code 로컬 설정 (추적 제외)
 CLAUDE.md
+
+# 로컬 분석 리포트 (추적 제외)
+ANALYSIS_*.md
