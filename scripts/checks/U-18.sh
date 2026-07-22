@@ -4,5 +4,5 @@
 ################################################################################
 check_U_18() {
     print_security_check "U-18" "/etc/shadow 파일 소유자 및 권한 설정" 1
-    check_file_permissions "/etc/shadow" "400" "U-18" "root"
+    check_shadow_permissions "U-18" "/etc/shadow"
 }

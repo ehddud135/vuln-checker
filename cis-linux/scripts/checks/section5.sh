@@ -55,10 +55,16 @@ check_CL_34() {
     local perm owner
     perm=$(cis_file_perm /etc/ssh/sshd_config)
     owner=$(cis_file_owner /etc/ssh/sshd_config)
-    if cis_perm_le "$perm" "600" && [ "$owner" = "root" ]; then
-        cis_record_result "CL-34" "PASS" "sshd_config 권한 ${perm}, 소유자 ${owner}"
+    # sshd_config엔 비밀정보가 없고 644/root:root는 대다수 배포판 기본값이므로 양호로 인정.
+    # 600 이하는 참고용 강화 권고로만 안내한다.
+    if cis_perm_le "$perm" "644" && [ "$owner" = "root" ]; then
+        if cis_perm_le "$perm" "600"; then
+            cis_record_result "CL-34" "PASS" "sshd_config 권한 ${perm}, 소유자 ${owner}"
+        else
+            cis_record_result "CL-34" "PASS" "sshd_config 권한 ${perm}(배포판 기본값), 소유자 ${owner} — 600으로 강화 권고(선택)"
+        fi
     else
-        cis_record_result "CL-34" "FAIL" "sshd_config 권한/소유자 미흡 (권한:${perm}, 소유자:${owner})"
+        cis_record_result "CL-34" "FAIL" "sshd_config 권한/소유자 미흡 (권한:${perm}, 소유자:${owner}, 최대 권장:644)"
     fi
 }
 

@@ -32,7 +32,7 @@ check_U_66() {
         [ "$journal_status" = "active" ] && logging_active=true
     fi
 
-    # /var/log 주요 로그 파일 확인
+    # /var/log 주요 로그 파일 확인 (전통적 flat-file 로깅 여부)
     local log_files=("/var/log/auth.log" "/var/log/secure" "/var/log/messages" "/var/log/syslog")
     local log_found=false
     for f in "${log_files[@]}"; do

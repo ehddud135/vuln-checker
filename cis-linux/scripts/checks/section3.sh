@@ -53,8 +53,19 @@ check_CL_23() {
 
 check_CL_24() {
     cis_print_check "CL-24"
-    _cis_sysctl_check "CL-24" "net.ipv4.conf.all.rp_filter" "1" \
-        "Reverse Path Filtering 활성화됨" "Reverse Path Filtering이 비활성화됨"
+    # rp_filter는 0(비활성)/1(strict)/2(loose) 3단계 값이라 범용 sysctl 비교로는
+    # loose(2, 켜짐)를 "비활성화"로 오기재하므로 값별로 별도 판정한다.
+    local val
+    val=$(cis_sysctl_get "net.ipv4.conf.all.rp_filter")
+    if [ -z "$val" ]; then
+        cis_record_result "CL-24" "REVIEW" "net.ipv4.conf.all.rp_filter 값을 확인할 수 없음"
+    elif [ "$val" = "1" ]; then
+        cis_record_result "CL-24" "PASS" "Reverse Path Filtering strict 모드로 활성화됨 (rp_filter=1)"
+    elif [ "$val" = "2" ]; then
+        cis_record_result "CL-24" "REVIEW" "Reverse Path Filtering loose 모드로 활성화됨 — 비활성 아님, CIS 권장 strict(1)로 전환 검토 (rp_filter=2)"
+    else
+        cis_record_result "CL-24" "FAIL" "Reverse Path Filtering이 비활성화됨 (rp_filter=${val}, 권장:1)"
+    fi
 }
 
 check_CL_25() {

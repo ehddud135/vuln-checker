@@ -325,7 +325,9 @@ get_shell() {
 # 로그인 불가능한 쉘 확인 (nologin, false, shutdown 등)
 is_nologin_shell() {
     local shell="$1"
-    if [[ "$shell" == *"nologin"* ]] || [[ "$shell" == *"false"* ]] || [[ "$shell" == *"shutdown"* ]] || [[ "$shell" == *"halt"* ]]; then
+    # /bin/sync는 Debian/Ubuntu 표준 sync 계정의 쉘로, sync(8)만 실행하고 즉시 종료되어
+    # 대화형 로그인이 불가능하므로 nologin과 동등하게 취급한다.
+    if [[ "$shell" == *"nologin"* ]] || [[ "$shell" == *"false"* ]] || [[ "$shell" == *"shutdown"* ]] || [[ "$shell" == *"halt"* ]] || [[ "$shell" == */sync ]]; then
         echo "true"
     else
         echo "false"
@@ -415,6 +417,59 @@ check_file_permissions() {
         else
             record_check_result "$code" "FAIL" "${issues}| $detail"
         fi
+    fi
+}
+
+# /etc/shadow류 권한 판정 (U-04, U-18 공용)
+# 배포판 표준인 "640 root:shadow"는 world 접근이 차단된 안전한 설정이므로 양호로 인정한다.
+# (400 root 단독 소유도 물론 양호. 그 외에는 취약)
+# 사용: shadow_perm_detail=$(shadow_permission_detail /etc/shadow); shadow_permission_ok /etc/shadow && ...
+shadow_permission_ok() {
+    local file="$1"
+    [ -e "$file" ] || return 1
+
+    local perm owner group perm_dec
+    perm=$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file" 2>/dev/null)
+    owner=$(stat -c %U "$file" 2>/dev/null || stat -f %Su "$file" 2>/dev/null)
+    group=$(stat -c %G "$file" 2>/dev/null || stat -f %Sg "$file" 2>/dev/null)
+    perm=$(echo "$perm" | tr -d '[:space:]' | sed 's/^0*//')
+    [ -z "$perm" ] && perm="0"
+    perm_dec=$(printf '%d' "0${perm}" 2>/dev/null) || perm_dec=9999
+
+    [ "$owner" = "root" ] || return 1
+    if [ "$perm_dec" -le "$(printf '%d' 0400)" ] 2>/dev/null; then
+        return 0
+    elif [ "$perm_dec" -le "$(printf '%d' 0640)" ] 2>/dev/null && [ "$group" = "shadow" ]; then
+        return 0
+    fi
+    return 1
+}
+
+shadow_permission_detail() {
+    local file="$1"
+    local perm owner group
+    perm=$(stat -c %a "$file" 2>/dev/null || stat -f %Lp "$file" 2>/dev/null)
+    owner=$(stat -c %U "$file" 2>/dev/null || stat -f %Su "$file" 2>/dev/null)
+    group=$(stat -c %G "$file" 2>/dev/null || stat -f %Sg "$file" 2>/dev/null)
+    perm=$(echo "$perm" | tr -d '[:space:]' | sed 's/^0*//')
+    echo "$file: 권한=${perm}, 소유자=${owner}, 그룹=${group}"
+}
+
+check_shadow_permissions() {
+    local code="$1"
+    local file="${2:-/etc/shadow}"
+
+    if [ ! -e "$file" ]; then
+        [ -n "$code" ] && record_check_result "$code" "REVIEW" "파일이 존재하지 않음: $file"
+        return 1
+    fi
+
+    local detail
+    detail=$(shadow_permission_detail "$file")
+    if shadow_permission_ok "$file"; then
+        [ -n "$code" ] && record_check_result "$code" "PASS" "$detail (적절)"
+    else
+        [ -n "$code" ] && record_check_result "$code" "FAIL" "$detail (권장: 400 root 단독소유 또는 640 root:shadow)"
     fi
 }
 
