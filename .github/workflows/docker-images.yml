@@ -1,0 +1,67 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'agent/**'
+      - 'main.sh'
+      - 'scripts/**'
+      - 'docker/**'
+      - 'cis-linux/**'
+      - 'isms-p/**'
+      - '.github/workflows/docker-images.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/vuln-checker-server:latest
+            ghcr.io/${{ github.repository_owner }}/vuln-checker-server:${{ github.sha }}
+
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 빌드 컨텍스트는 저장소 루트 — agent/Dockerfile이 main.sh + scripts/ 등을
+      # 이미지에 그대로 담아야 하기 때문(agent/Dockerfile 상단 주석 참고).
+      - name: Build and push agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./agent/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/vuln-checker-agent:latest
+            ghcr.io/${{ github.repository_owner }}/vuln-checker-agent:${{ github.sha }}

@@ -55,3 +55,14 @@ CLAUDE.md
 
 # 로컬 분석 리포트 (추적 제외)
 ANALYSIS_*.md
+
+# 모니터링 플랫폼 (server/agent) 로컬 산출물
+server/db.sqlite3
+server/__pycache__/
+server/**/__pycache__/
+server/**/migrations/__pycache__/
+agent/vuln-checker-agent
+agent/agent.json
+*.agent.json
+agent/.test/
+agent/.test3/

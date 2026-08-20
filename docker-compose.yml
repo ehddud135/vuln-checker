@@ -1,0 +1,83 @@
+# 모니터링 플랫폼 서버(Django) 배포용.
+services:
+  web:
+    build: ./server
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-vulnchecker}
+      POSTGRES_USER: ${POSTGRES_USER:-vulnchecker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379/0
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build: ./server
+    command: celery -A config worker --loglevel=info
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-false}
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-vulnchecker}
+      POSTGRES_USER: ${POSTGRES_USER:-vulnchecker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379/0
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vulnchecker}
+      POSTGRES_USER: ${POSTGRES_USER:-vulnchecker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vulnchecker}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # 메트릭 그래프 전용 — 호스트 목록/Problems/조치 워크플로는 여전히 Django(web)가 담당한다.
+  # Grafana는 db를 읽기 전용(grafana_reader 롤)으로만 조회한다 — 쓰기 권한 없음.
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GRAFANA_DB_READER_PASSWORD: ${GRAFANA_DB_READER_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-vulnchecker}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  grafana_data:

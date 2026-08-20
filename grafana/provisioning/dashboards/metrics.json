@@ -1,0 +1,64 @@
+{
+  "uid": "vc-metrics",
+  "title": "vuln-checker — Infra Metrics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "type": "query",
+        "datasource": "vuln-checker Postgres",
+        "query": "SELECT DISTINCT hostname FROM monitor_host ORDER BY hostname",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "CPU utilization by host",
+      "type": "timeseries",
+      "datasource": "vuln-checker Postgres",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT ms.collected_at AS \"time\", h.hostname AS metric, ms.value AS value FROM monitor_metricsample ms JOIN monitor_host h ON h.id = ms.host_id WHERE ms.metric_type = 'cpu' AND ms.sub_dimension = 'aggregate' AND ($__timeFilter(ms.collected_at)) AND ('$host' = 'All' OR h.hostname IN ($host)) ORDER BY ms.collected_at",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "위험도 점수 추이 (최신 CheckRun 기준)",
+      "type": "timeseries",
+      "datasource": "vuln-checker Postgres",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "max": 100 },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "format": "time_series",
+          "rawSql": "SELECT cr.executed_at AS \"time\", h.hostname AS metric, cr.risk_score AS value FROM monitor_checkrun cr JOIN monitor_host h ON h.id = cr.host_id WHERE ($__timeFilter(cr.executed_at)) AND ('$host' = 'All' OR h.hostname IN ($host)) ORDER BY cr.executed_at",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

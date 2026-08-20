@@ -1,0 +1,57 @@
+{% extends "monitor/base.html" %}
+{% block title %}호스트 — vuln-checker{% endblock %}
+{% block content %}
+  <div class="topbar">
+    <h1>호스트</h1>
+    <span class="meta">{{ hosts|length }}개 호스트</span>
+  </div>
+  <main>
+    <div class="panel">
+      <div class="panel-header">Hosts</div>
+      {% if hosts %}
+      <table>
+        <thead>
+          <tr>
+            <th>상태</th>
+            <th>호스트명</th>
+            <th>OS / 배포판</th>
+            <th>위험도 점수</th>
+            <th>Problems</th>
+            <th>최근 점검</th>
+            <th>마지막 하트비트</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in hosts %}
+          <tr>
+            <td>
+              {% if row.host.last_heartbeat_at %}
+                <span class="status-pill host-enabled">Enabled</span>
+              {% else %}
+                <span class="status-pill host-stale">등록만 됨</span>
+              {% endif %}
+            </td>
+            <td><a class="host-link" href="/hosts/{{ row.host.id }}/">{{ row.host.hostname }}</a></td>
+            <td>{{ row.host.os }} {{ row.host.distro }}</td>
+            <td>
+              {% if row.latest_run %}
+                <span class="pill {{ row.risk_class }}">{{ row.latest_run.risk_score }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if row.fail_count %}<span class="sev-badge sev-high">{{ row.fail_count }} High</span>{% endif %}
+              {% if row.review_count %}<span class="sev-badge sev-warning">{{ row.review_count }} Warn</span>{% endif %}
+              {% if not row.fail_count and not row.review_count and row.latest_run %}<span class="sev-badge sev-none">정상</span>{% endif %}
+            </td>
+            <td>{% if row.latest_run %}{{ row.latest_run.executed_at }}{% else %}점검 이력 없음{% endif %}</td>
+            <td>{{ row.host.last_heartbeat_at|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">등록된 호스트가 없습니다. 에이전트로 <code>enroll</code>을 먼저 실행하세요.</p>
+      {% endif %}
+    </div>
+  </main>
+{% endblock %}

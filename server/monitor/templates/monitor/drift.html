@@ -1,0 +1,46 @@
+{% extends "monitor/base.html" %}
+{% block title %}Drift Timeline — vuln-checker{% endblock %}
+{% block content %}
+  <div class="topbar">
+    <h1>Drift Timeline</h1>
+    <span class="meta">{{ events|length }}건 — agent-reported observation (원격 증명 아님)</span>
+  </div>
+  <main>
+    <div class="panel">
+      <div class="panel-header">최근 상태 변화</div>
+      {% if events %}
+      <table>
+        <thead>
+          <tr><th>시각</th><th>호스트</th><th>코드</th><th>변화</th><th>비고</th><th>상세 diff</th></tr>
+        </thead>
+        <tbody>
+          {% for e in events %}
+          <tr>
+            <td>{{ e.detected_at }}</td>
+            <td><a class="host-link" href="/hosts/{{ e.check_result.run.host.id }}/">{{ e.check_result.run.host.hostname }}</a></td>
+            <td>{{ e.check_result.code }} — {{ e.check_result.name }}</td>
+            <td>
+              <span class="drift-arrow {% if e.new_status == 'FAIL' %}drift-to-fail{% elif e.new_status == 'PASS' %}drift-to-pass{% endif %}">
+                {{ e.previous_status }} &rarr; {{ e.new_status }}
+              </span>
+            </td>
+            <td>
+              {% if e.content_version_changed %}
+              <span style="color:#b5690a;">체크 콘텐츠 버전 변경됨 — 실제 설정 드리프트 아닐 수 있음</span>
+              {% else %}
+              <span style="color:#8a9199;">설정 드리프트로 추정</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if e.config_diff %}<div class="remediation-box">{{ e.config_diff }}</div>{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">아직 감지된 드리프트가 없습니다.</p>
+      {% endif %}
+    </div>
+  </main>
+{% endblock %}

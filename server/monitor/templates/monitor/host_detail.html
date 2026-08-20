@@ -1,0 +1,84 @@
+{% extends "monitor/base.html" %}
+{% block title %}{{ host.hostname }} — vuln-checker{% endblock %}
+{% block content %}
+  <div class="topbar">
+    <h1>{{ host.hostname }}</h1>
+    <span class="meta">{{ host.os }} {{ host.distro }} · 마지막 하트비트 {{ host.last_heartbeat_at|default:"—" }}</span>
+  </div>
+  <main>
+    <p><a class="back-link" href="/">&larr; 호스트 목록</a></p>
+
+    <div class="panel">
+      <div class="panel-header">Overview</div>
+      <div style="padding: 14px;">
+        {% if latest_run %}
+          위험도 점수 <span class="pill {{ risk_class }}">{{ latest_run.risk_score }}</span>
+          &nbsp; <span class="sev-badge sev-high">{{ latest_run.fail_count }} High</span>
+          <span class="sev-badge sev-warning">{{ latest_run.review_count }} Warning</span>
+          <span class="sev-badge sev-none">{{ latest_run.pass_count }} 정상</span>
+          <div style="color:#8a9199; font-size: 12px; margin-top: 8px;">
+            {{ latest_run.profile }} 프로파일 · {{ latest_run.executed_at }} · 실행 완전성 {{ latest_run.actual_count }}/{{ latest_run.expected_count }}
+          </div>
+        {% else %}
+          <p class="empty">아직 점검 결과가 없습니다.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if has_cpu_data %}
+    <div class="panel">
+      <div class="panel-header">Latest data — CPU</div>
+      <div style="padding: 14px;">
+        <canvas id="cpuChart" height="70"></canvas>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if results %}
+    <div class="panel">
+      <div class="panel-header">점검 결과</div>
+      <table>
+        <thead>
+          <tr><th>심각도</th><th>코드</th><th>이름</th><th>표준</th><th>상세</th></tr>
+        </thead>
+        <tbody>
+          {% for row in results %}
+          <tr>
+            <td><span class="sev-badge {{ row.sev_class }}">{{ row.sev_label }}</span></td>
+            <td>{{ row.result.code }}</td>
+            <td>{{ row.result.name }}</td>
+            <td>{{ row.result.standard }}</td>
+            <td>{{ row.result.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </main>
+
+  {% if has_cpu_data %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    new Chart(document.getElementById('cpuChart'), {
+      type: 'line',
+      data: {
+        labels: {{ cpu_labels|safe }},
+        datasets: [{
+          label: 'CPU %',
+          data: {{ cpu_values|safe }},
+          borderColor: '#0275b8',
+          backgroundColor: 'rgba(2,117,184,0.1)',
+          tension: 0.25,
+          fill: true,
+          pointRadius: 0,
+        }]
+      },
+      options: {
+        scales: { y: { beginAtZero: true, max: 100 } },
+        plugins: { legend: { display: false } },
+      }
+    });
+  </script>
+  {% endif %}
+{% endblock %}

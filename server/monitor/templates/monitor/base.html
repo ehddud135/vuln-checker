@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}vuln-checker 모니터링{% endblock %}</title>
+  <style>
+    :root {
+      --sev-none: #97aaba;
+      --sev-info: #7499ff;
+      --sev-warning: #ffc859;
+      --sev-average: #ffa059;
+      --sev-high: #e97659;
+      --sev-disaster: #e45959;
+      --ok-green: #59db8f;
+      --accent: #0275b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Arial, Helvetica, "Malgun Gothic", sans-serif;
+      margin: 0; background: #ebeef0; color: #1f2124; font-size: 13px;
+    }
+    .app-shell { display: flex; min-height: 100vh; }
+
+    /* --- 사이드바 (Zabbix 네비게이션 구조 참고) --- */
+    .sidebar {
+      width: 200px; flex-shrink: 0; background: #1f1f1f; color: #d6d6d6;
+      padding: 0; display: flex; flex-direction: column;
+    }
+    .sidebar .brand {
+      padding: 16px 18px; font-weight: 700; color: #fff; font-size: 15px;
+      border-bottom: 1px solid #333;
+    }
+    .sidebar nav { padding: 10px 0; }
+    .sidebar nav a {
+      display: block; padding: 10px 18px; color: #b7b7b7; text-decoration: none; font-size: 13px;
+    }
+    .sidebar nav a:hover { background: #2c2c2c; color: #fff; }
+    .sidebar nav a.active { background: #333; color: #fff; border-left: 3px solid var(--accent); }
+    .sidebar .sev-legend { margin-top: auto; padding: 14px 18px; font-size: 11px; color: #888; border-top: 1px solid #333; }
+    .sidebar .sev-legend div { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .sidebar .sev-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+    /* --- 메인 콘텐츠 --- */
+    .content { flex: 1; padding: 0; min-width: 0; }
+    .topbar {
+      background: #fff; border-bottom: 1px solid #d3d7da; padding: 14px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .topbar h1 { font-size: 16px; margin: 0; font-weight: 700; color: #1f2124; }
+    .topbar .meta { color: #8a9199; font-size: 12px; }
+    main { padding: 20px 24px; }
+
+    .panel { background: #fff; border: 1px solid #d3d7da; border-radius: 3px; margin-bottom: 16px; }
+    .panel-header { padding: 10px 14px; border-bottom: 1px solid #e4e7e9; font-weight: 700; font-size: 12px; color: #4a4f54; text-transform: uppercase; letter-spacing: .03em; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid #eceeef; }
+    th { color: #7c8792; font-weight: 700; font-size: 11px; text-transform: uppercase; background: #f7f8f9; }
+    tbody tr:hover { background: #f4f8fb; }
+
+    a.host-link { color: var(--accent); text-decoration: none; font-weight: 600; }
+    a.host-link:hover { text-decoration: underline; }
+    a.back-link { color: var(--accent); text-decoration: none; font-size: 12px; }
+
+    .pill { font-weight: 700; padding: 2px 9px; border-radius: 10px; display: inline-block; font-size: 11px; }
+    .risk-good { background: #e6faf0; color: #1a9d5c; }
+    .risk-warn { background: #fff3e0; color: #b5690a; }
+    .risk-bad { background: #fde9e9; color: #c0392b; }
+
+    .sev-badge { color: #fff; font-weight: 700; padding: 2px 10px; border-radius: 3px; font-size: 11px; display: inline-block; min-width: 60px; text-align: center; }
+    .sev-high, .sev-disaster { background: var(--sev-high); }
+    .sev-warning { background: var(--sev-warning); color: #4a3800; }
+    .sev-average { background: var(--sev-average); }
+    .sev-none { background: var(--sev-none); }
+
+    .status-badge { padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 700; }
+    .status-PASS { background: #e6faf0; color: #1a9d5c; }
+    .status-FAIL { background: #fde9e9; color: #c0392b; }
+    .status-REVIEW { background: #fff3e0; color: #b5690a; }
+
+    .status-pill { padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 700; }
+    .host-enabled { background: #e6faf0; color: #1a9d5c; }
+    .host-stale { background: #f1f2f3; color: #8a9199; }
+
+    .empty { color: #8a9199; padding: 40px 0; text-align: center; }
+    canvas { background: #fff; padding: 8px; }
+
+    .ticket-status { padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; display: inline-block; }
+    .ticket-open { background: #fde9e9; color: #c0392b; }
+    .ticket-acknowledged { background: #fff3e0; color: #b5690a; }
+    .ticket-resolved { background: #e6faf0; color: #1a9d5c; }
+    .remediation-box {
+      background: #f7f8f9; border: 1px solid #e4e7e9; border-radius: 3px; padding: 10px 12px;
+      font-family: "SF Mono", Consolas, monospace; font-size: 12px; white-space: pre-wrap; margin: 6px 0;
+    }
+    .copy-btn, .ack-btn {
+      background: var(--accent); color: #fff; border: none; border-radius: 3px; padding: 5px 12px;
+      font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+    .copy-btn:hover, .ack-btn:hover { opacity: .9; }
+    .copy-btn.copied { background: var(--ok-green); }
+    .drift-arrow { font-weight: 700; }
+    .drift-to-fail { color: #c0392b; }
+    .drift-to-pass { color: #1a9d5c; }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">vuln-checker</div>
+      <nav>
+        <a href="/" class="{% if nav == 'dashboard' %}active{% endif %}">호스트 (Dashboard)</a>
+        <a href="/problems/" class="{% if nav == 'problems' %}active{% endif %}">Problems</a>
+        <a href="/proposals/" class="{% if nav == 'proposals' %}active{% endif %}">Fix-First</a>
+        <a href="/drift/" class="{% if nav == 'drift' %}active{% endif %}">Drift Timeline</a>
+      </nav>
+      <div class="sev-legend">
+        <div><span class="sev-dot" style="background:var(--sev-high)"></span>High (FAIL)</div>
+        <div><span class="sev-dot" style="background:var(--sev-warning)"></span>Warning (REVIEW)</div>
+        <div><span class="sev-dot" style="background:var(--sev-none)"></span>Not classified (PASS)</div>
+      </div>
+    </aside>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,41 @@
+{% extends "monitor/base.html" %}
+{% block title %}Problems — vuln-checker{% endblock %}
+{% block content %}
+  <div class="topbar">
+    <h1>Problems</h1>
+    <span class="meta">{{ rows|length }}건 (최신 점검 기준, PASS 제외)</span>
+  </div>
+  <main>
+    <div class="panel">
+      <div class="panel-header">Problems</div>
+      {% if rows %}
+      <table>
+        <thead>
+          <tr>
+            <th>심각도</th>
+            <th>시간</th>
+            <th>호스트</th>
+            <th>코드</th>
+            <th>문제</th>
+            <th>상세</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td><span class="sev-badge {{ row.sev_class }}">{{ row.sev_label }}</span></td>
+            <td>{{ row.detected_at }}</td>
+            <td><a class="host-link" href="/hosts/{{ row.host.id }}/">{{ row.host.hostname }}</a></td>
+            <td>{{ row.result.code }}</td>
+            <td>{{ row.result.name }}</td>
+            <td>{{ row.result.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">현재 열려있는 Problem이 없습니다 — 모든 호스트가 정상입니다.</p>
+      {% endif %}
+    </div>
+  </main>
+{% endblock %}

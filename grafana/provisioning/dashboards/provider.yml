@@ -1,0 +1,10 @@
+apiVersion: 1
+
+providers:
+  - name: vuln-checker
+    folder: vuln-checker
+    type: file
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
